@@ -1,0 +1,21 @@
+{
+  "name": "workbox-bundle-project",
+  "version": "1.0.1",
+  "description": "Bundle Service Worker with Workbox",
+  "scripts": {
+    "build": "webpack --mode production",
+    "dev": "webpack --mode development --watch"
+  },
+  "devDependencies": {
+    "webpack": "^5.89.0",
+    "webpack-cli": "^5.1.4",
+    "workbox-webpack-plugin": "^7.3.0"
+  },
+  "dependencies": {
+    "workbox-cacheable-response": "^7.3.0",
+    "workbox-core": "^7.3.0",
+    "workbox-expiration": "^7.3.0",
+    "workbox-routing": "^7.3.0",
+    "workbox-strategies": "^7.3.0"
+  }
+}
