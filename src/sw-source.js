@@ -2,6 +2,92 @@ import { registerRoute } from 'workbox-routing';
 import { CacheFirst, StaleWhileRevalidate } from 'workbox-strategies';
 import { ExpirationPlugin } from 'workbox-expiration';
 import { clientsClaim, skipWaiting } from 'workbox-core';
+import { getConfig } from './db-utils.js';
+
+// 默认配置
+let configCache = {
+  bestFormat: 'avif',
+  fastestNode: 'https://onep.hzchu.top'
+};
+
+// 预热：SW 启动时先读一次数据库
+async function initConfig() {
+  const image_opt_best_format = await getConfig('image_opt_best_format');
+  if (image_opt_best_format) {
+    configCache.bestFormat = image_opt_best_format;
+  }
+
+  const image_opt_fastest_node_raw = await getConfig('image_opt_fastest_node');
+  if (image_opt_fastest_node_raw) {
+    try {
+      const image_opt_fastest_node = typeof image_opt_fastest_node_raw === 'string' 
+        ? JSON.parse(image_opt_fastest_node_raw) 
+        : image_opt_fastest_node_raw;
+      if (image_opt_fastest_node && image_opt_fastest_node.link) {
+        configCache.fastestNode = image_opt_fastest_node.link;
+        // console.log('Loaded fastest node from DB:', configCache.fastestNode);
+      }
+    } catch (e) {
+      console.error('Failed to parse fastest node config:', e);
+    }
+  }
+}
+const initPromise = initConfig();
+
+
+registerRoute(
+  ({ url, request }) => {
+    return request.destination === 'image' && 
+           (url.origin === 'https://onep.hzchu.top' || url.search.includes('fmt='));
+  },
+  async ({ url, request, event }) => {
+    try {
+      await initPromise; // 确保配置已加载
+      let targetUrl = new URL(url.href);
+
+      // 1. 域名替换
+      if (targetUrl.origin === 'https://onep.hzchu.top') {
+        try {
+          const newBase = new URL(configCache.fastestNode);
+          targetUrl.host = newBase.host;
+          targetUrl.protocol = newBase.protocol;
+        } catch (e) {
+          console.warn('Invalid fastestNode URL:', configCache.fastestNode, e);
+          // 使用默认值继续
+        }
+      }
+
+      // 2. 格式改写
+      const fmt = targetUrl.searchParams.get('fmt');
+      if (fmt && fmt !== configCache.bestFormat) {
+        targetUrl.searchParams.set('fmt', configCache.bestFormat);
+      }
+
+      const strategy = new CacheFirst({
+        cacheName: 'optimized-images-v2',
+        plugins: [
+          new ExpirationPlugin({ maxAgeSeconds: 12 * 60 * 60 }),
+          {
+            // 允许缓存不透明响应
+            cacheWillUpdate: async ({response}) => {
+              if (response.status === 0 || response.ok) return response;
+              return null;
+            }
+          }
+        ]
+      });
+
+      return strategy.handle({ event, request: new Request(targetUrl.href, { mode: 'no-cors' }) });
+    } catch (error) {
+      console.error('Route handler error:', error);
+      // 返回原始请求
+      return fetch(request);
+    }
+  }
+);
+
+
+
 
 // CDN 资源缓存策略
 registerRoute(
