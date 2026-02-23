@@ -99,10 +99,15 @@ registerRoute(
   new CacheFirst({
     cacheName: 'cdn-resources',
     plugins: [
-      new ExpirationPlugin({
-        maxAgeSeconds: 90 * 24 * 60 * 60, // 90 天
-      }),
-    ],
+      new ExpirationPlugin({ maxAgeSeconds: 90 * 24 * 60 * 60 }),
+      {
+        // 允许缓存不透明响应
+        cacheWillUpdate: async ({response}) => {
+          if (response.status === 0 || response.ok) return response;
+          return null;
+        }
+      }
+    ]
   })
 );
 
@@ -116,10 +121,15 @@ registerRoute(
   new StaleWhileRevalidate({
     cacheName: 'js-css-resources-local',
     plugins: [
-      new ExpirationPlugin({
-        maxAgeSeconds: 7 * 24 * 60 * 60, // 7 天
-      }),
-    ],
+      new ExpirationPlugin({ maxAgeSeconds: 7 * 24 * 60 * 60 }),
+      {
+        // 允许缓存不透明响应
+        cacheWillUpdate: async ({response}) => {
+          if (response.status === 0 || response.ok) return response;
+          return null;
+        }
+      }
+    ]
   })
 );
 
@@ -135,11 +145,43 @@ registerRoute(
   new CacheFirst({
     cacheName: 'js-css-resources-external',
     plugins: [
-      new ExpirationPlugin({
-        maxAgeSeconds: 90 * 24 * 60 * 60, // 90 天
-      }),
-    ],
+      new ExpirationPlugin({ maxAgeSeconds: 90 * 24 * 60 * 60 }),
+      {
+        // 允许缓存不透明响应
+        cacheWillUpdate: async ({response}) => {
+          if (response.status === 0 || response.ok) return response;
+          return null;
+        }
+      }
+    ]
   })
+);
+
+// hdslb.com 请求处理（无referrer）
+registerRoute(
+  ({ url }) => {
+    // 匹配 hdslb.com 及其子域名
+    return url.host === 'hdslb.com' || url.host.endsWith('.hdslb.com');
+  },
+  async ({ request, event }) => {
+    try {
+      // 创建新的请求对象，设置 referrer policy 为 no-referrer
+      const newRequest = new Request(request.url, {
+        method: request.method,
+        headers: request.headers,
+        body: request.body,
+        mode: request.mode,
+        credentials: request.credentials,
+        cache: request.cache,
+        redirect: request.redirect,
+        referrerPolicy: 'no-referrer'
+      });
+      return fetch(newRequest);
+    } catch (error) {
+      console.error('hdslb.com request error:', error);
+      return fetch(request);
+    }
+  }
 );
 
 // 立即激活
