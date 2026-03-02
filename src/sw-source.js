@@ -184,6 +184,92 @@ registerRoute(
   }
 );
 
+// 本地处理B站API请求，去掉referrer
+registerRoute(
+  ({ url }) => {
+    // 匹配 biliinfo.api.hzchu.top
+    return url.host === 'biliinfo.api.hzchu.top';
+  },
+  async ({ request, event }) => {
+    try {
+      // 创建新的请求对象，代理到 https://blog.hzchu.top/_eoapi/get_bilibili_video_info?bvid=
+
+      // 提取查询参数
+      const originalUrl = new URL(request.url);
+      const bvid = originalUrl.searchParams.get('bvid');
+      const targetUrl = `https://blog.hzchu.top/_eoapi/get_bilibili_video_info?bvid=${bvid}`;
+
+      const newRequest = new Request(targetUrl, {
+        method: request.method,
+        headers: request.headers,
+        body: request.body,
+        mode: request.mode,
+        credentials: request.credentials,
+        cache: request.cache,
+        redirect: request.redirect,
+        // referrerPolicy: 'no-referrer'
+      });
+
+      const response = await fetch(newRequest);
+      if (response.ok) {
+        return response;
+      } else {
+        if (response.status === 404) {
+          console.warn('当前请求非EO环境，正在回退到普通接口');
+        } else {
+            console.error('biliinfo request failed with status:', response.status);
+        }
+        return fetch(request);
+      }
+
+    } catch (error) {
+      console.error('biliinfo request error:', error);
+      return fetch(request);
+    }
+  }
+);
+
+// 在EO可用时，使用EO进行请求，否则回退到fetch
+registerRoute(
+  ({ url }) => {
+    // 匹配 https://generate-cloud-image.hzchu.top/v1/image?format=json
+    return url.href.startsWith('https://generate-cloud-image.hzchu.top/v1/image?format=json');
+  },
+  async ({ request, event }) => {
+    try {
+      // 创建新的请求对象，代理到 https://blog.hzchu.top/_eoapi/get_weather_info
+      const targetUrl = `https://blog.hzchu.top/_eoapi/get_weather_info`;
+
+      const newRequest = new Request(targetUrl, {
+        method: request.method,
+        headers: request.headers,
+        body: request.body,
+        mode: request.mode,
+        credentials: request.credentials,
+        cache: request.cache,
+        redirect: request.redirect,
+        // referrerPolicy: 'no-referrer'
+      });
+
+      const response = await fetch(newRequest);
+      if (response.ok) {
+        return response;
+      } else {
+        if (response.status === 404) {
+          console.warn('当前请求非EO环境，正在回退到普通接口');
+        } else {
+            console.error('get_weather_info request failed with status:', response.status);
+        }
+        return fetch(request);
+      }
+    } catch (error) {
+      console.error('get_weather_info request error:', error);
+      return fetch(request);
+    }
+  }
+);
+
+
 // 立即激活
 skipWaiting();
 clientsClaim();
