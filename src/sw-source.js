@@ -3,7 +3,7 @@ import { CacheFirst, StaleWhileRevalidate } from 'workbox-strategies';
 import { ExpirationPlugin } from 'workbox-expiration';
 import { clientsClaim, skipWaiting } from 'workbox-core';
 import { getConfig } from './db-utils.js';
-
+import { getColor } from './weather.js';
 // 默认配置
 let configCache = {
   bestFormat: 'avif',
@@ -132,13 +132,34 @@ registerRoute(
     ]
   })
 );
+// Artalk 资源缓存策略
+registerRoute(
+  ({ url, request }) => {
+    const isJsOrCss = request.destination === 'script' || request.destination === 'style';
+    const isTargetOrigin = 
+      url.origin === 'https://artalk.hzchu.top';
+    return isJsOrCss && isTargetOrigin;
+  },
+  new CacheFirst({
+    cacheName: 'js-css-resources-artalk',
+    plugins: [
+      new ExpirationPlugin({ maxAgeSeconds: 90 * 24 * 60 * 60 }),
+      {
+        // 允许缓存不透明响应
+        cacheWillUpdate: async ({response}) => {
+          if (response.status === 0 || response.ok) return response;
+          return null;
+        }
+      }
+    ]
+  })
+);
 
 // JS/CSS 资源缓存策略
 registerRoute(
   ({ url, request }) => {
     const isJsOrCss = request.destination === 'script' || request.destination === 'style';
     const isTargetOrigin = 
-      url.origin === 'https://artalk.hzchu.top' || 
       url.origin === 'https://sdk.jinrishici.com';
     return isJsOrCss && isTargetOrigin;
   },
@@ -253,7 +274,19 @@ registerRoute(
 
       const response = await fetch(newRequest);
       if (response.ok) {
-        return response;
+        const jsonData = await response.json();
+        const weatherCode = Number(jsonData["current"]["weather"]);
+        if (weatherCode >= 300) weatherCode -= 300;
+        const result = {
+          // "scan_target": "广州",
+          // "level": "city",
+          "weather_code": weatherCode,
+          "color": getColor(weatherCode),
+          "cloud_count": weatherCode + 2
+        }
+        return new Response(JSON.stringify(result), {
+          headers: { 'Content-Type': 'application/json' }
+        });
       } else {
         if (response.status === 404) {
           console.warn('当前请求非EO环境，正在回退到普通接口');
